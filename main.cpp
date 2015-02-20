@@ -15,7 +15,7 @@ static int n_outstanding = 0;
 static bool retry = false;
 static int reconnect_timeout = 1;
 
-void on_ready(pa_context*);
+void on_ready(pa_context*, void* userdata);
 void show_error(const char *txt) {
     char buf[256];
 
@@ -60,7 +60,7 @@ void context_state_callback(pa_context *c, void *userdata) {
 
     case PA_CONTEXT_READY: {
         printf("PA_CONTEXT_READY\n");
-        on_ready(c);
+        on_ready(c, userdata);
         break;
     }
     case PA_CONTEXT_FAILED: {
@@ -77,6 +77,8 @@ void context_state_callback(pa_context *c, void *userdata) {
 
 gboolean connect_to_pulse(gpointer userdata) {
     MainWindow *w = static_cast<MainWindow*>(userdata);
+    g_assert(w != nullptr);
+
     if (context) {
         fprintf(stderr, "context != NULL\n");
         return false;
@@ -137,7 +139,7 @@ void card_cb(pa_context *, const pa_card_info *i, int eol, void *userdata) {
         return;
     }
 
-    w->updateCard(*i);
+    w->handler()->updateCard(*i);
 }
 
 void sink_cb(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
@@ -157,10 +159,10 @@ void sink_cb(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
     }
 
 #if HAVE_EXT_DEVICE_RESTORE_API
-    if (w->updateSink(*i))
+    if (w->handler()->updateSink(*i))
         ext_device_restore_subscribe_cb(c, PA_DEVICE_TYPE_SINK, i->index, w);
 #else
-    w->updateSink(*i);
+    w->handler()->updateSink(*i);
 #endif
 }
 
@@ -180,7 +182,7 @@ void source_cb(pa_context *, const pa_source_info *i, int eol, void *userdata) {
         return;
     }
 
-    w->updateSource(*i);
+    w->handler()->updateSource(*i);
 }
 
 void sink_input_cb(pa_context *, const pa_sink_input_info *i, int eol, void *userdata) {
@@ -199,7 +201,7 @@ void sink_input_cb(pa_context *, const pa_sink_input_info *i, int eol, void *use
         return;
     }
 
-    w->updateSinkInput(*i);
+    w->handler()->updateSinkInput(*i);
 }
 
 void source_output_cb(pa_context *, const pa_source_output_info *i, int eol, void *userdata) {
@@ -239,12 +241,12 @@ void source_output_cb(pa_context *, const pa_source_output_info *i, int eol, voi
         return;
     }
 
-    w->updateSourceOutput(*i);
+    w->handler()->updateSourceOutput(*i);
 }
 
 void client_cb(pa_context *, const pa_client_info *i, int eol, void *userdata) {
     MainWindow *w = static_cast<MainWindow*>(userdata);
-
+    g_assert(w!=nullptr);
     if (eol < 0) {
         if (pa_context_errno(context) == PA_ERR_NOENTITY)
             return;
@@ -258,18 +260,18 @@ void client_cb(pa_context *, const pa_client_info *i, int eol, void *userdata) {
         return;
     }
 
-    w->updateClient(*i);
+    w->handler()->updateClient(*i);
 }
 
 void server_info_cb(pa_context *, const pa_server_info *i, void *userdata) {
     MainWindow *w = static_cast<MainWindow*>(userdata);
-
+    g_assert(w != nullptr);
     if (!i) {
         show_error("Server info callback failure");
         return;
     }
 
-    w->updateServer(*i);
+    w->handler()->updateServer(*i);
     dec_outstanding(w);
 }
 
@@ -368,11 +370,13 @@ void subscribe_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t index,
     }
 }
 
-void on_ready(pa_context *c) {
+void on_ready(pa_context *c, void* userdata) {
     printf("Ready\n");
 
-    pa_operation *o;
+    MainWindow *w = static_cast<MainWindow*>(userdata);
+    g_assert(w!=nullptr);
 
+    pa_operation *o;
     reconnect_timeout = 1;
 
     /* Create event widget immediately so it's first in the list */
@@ -392,7 +396,6 @@ void on_ready(pa_context *c) {
         return;
     }
     pa_operation_unref(o);
-    void *w = NULL;
     /* Keep track of the outstanding callbacks for UI tweaks */
     n_outstanding = 0;
 
